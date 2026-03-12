@@ -47,9 +47,9 @@ pnpm install
 
 ```bash
 cd apps/sim-service
-cp .env.example .env  # if available; otherwise create .env manually
-# ensure DATABASE_URL points to the SQLite file, e.g.:
-# DATABASE_URL="file:./prisma/dev.db"
+cp .env.example .env
+# DATABASE_URL is preconfigured to use the repository data directory:
+# DATABASE_URL="file:../../../data/sim-service/dev.db"
 pnpm prisma generate
 pnpm prisma db push
 pnpm tsx prisma/seed-fleet.ts
@@ -108,6 +108,8 @@ Documentation priority is: **SEC > DD > TDD > AGENTS > VISION**.
 
 ## Contribution notes
 
+- Local runtime data (e.g., SQLite DB files) lives under `data/` and is not committed.
+- `.env` files are never committed; only `*.env.example` templates belong in Git.
 - Keep the server-authoritative boundary intact.
 - Preserve explainability in validation and operations decisions.
 - Update `docs/CHANGELOG.md` for substantive changes.

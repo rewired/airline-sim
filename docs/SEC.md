@@ -72,6 +72,12 @@ Not included in MVP 0.1:
 - Historical starting years
 - Modding layer
 
+
+## Repository Secret & Local Data Hygiene
+- `.env` files are strictly local and must never be committed to Git.
+- Only template files (`.env.example`, `.env.<name>.example`) may be tracked.
+- Local runtime databases/artifacts (e.g., SQLite `dev.db`) must be stored under the repository `data/` directory, not inside app source folders.
+
 ## Documentation Requirement
 - For every substantive change: update CHANGELOG.
 - For every architecture or guiding decision change: create/continue an ADR.

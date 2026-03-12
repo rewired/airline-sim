@@ -35,8 +35,12 @@ test-results/
 
 # ─── Runtime data directories ────────────────────────────────────────────────
 /data/**
+!/data/
+!/data/**/
 !/data/**/.gitkeep
 /logs/**
+!/logs/
+!/logs/**/
 !/logs/**/.gitkeep
 
 # ─── OS artefacts ────────────────────────────────────────────────────────────
@@ -63,3 +67,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Prisma local sqlite files must not live in source folders
+apps/**/prisma/*.db
+apps/**/prisma/*.db-journal
