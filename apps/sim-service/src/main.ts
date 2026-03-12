@@ -154,6 +154,9 @@ app.get("/api/dashboard/hub-health", async (req, res) => {
 });
 
 import { FlightLegRepository } from "./db/repositories/flightLeg.repository";
+import { OpsEventRepository } from "./db/repositories/opsEvent.repository";
+import { RecoveryActionRepository } from "./db/repositories/recoveryAction.repository";
+import { ScheduleVersionRepository } from "./db/repositories/scheduleVersion.repository";
 
 app.get("/api/ops/flights", async (req, res) => {
   try {
@@ -167,19 +170,19 @@ app.get("/api/ops/flights", async (req, res) => {
 app.post("/api/ops/recover", async (req, res) => {
   try {
     const { flightId, action } = req.body;
+    const airlineId = (req.body.airlineId as string) || "123";
+
+    const publishedVersion =
+      await ScheduleVersionRepository.getPublishedVersion(airlineId);
+    if (!publishedVersion) {
+      return res.status(400).json({ error: "No published schedule version found" });
+    }
 
     if (action === "cancel") {
       await FlightLegRepository.updateFlightState(flightId, "cancelled");
     } else if (action === "delay") {
-      // For MVP, just move estimated arrival 1 hour
       await FlightLegRepository.updateFlightState(flightId, "delayed");
     }
-
-    // Broadcast the update immediately via WS (T066)
-    gameEngine.onFlightStateChanged?.(
-      flightId,
-      action === "cancel" ? "cancelled" : "delayed",
-    );
 
     const impact =
       action === "cancel"
@@ -194,7 +197,28 @@ app.post("/api/ops/recover", async (req, res) => {
             summary: "Delay preserves network continuity with moderate OTP and cost impact.",
           };
 
-    res.json({ success: true, impact });
+    const opsEvent = await OpsEventRepository.createEvent({
+      scheduleVersionId: publishedVersion.id,
+      type: action === "cancel" ? "recovery_cancel" : "recovery_delay",
+      severity: action === "cancel" ? "high" : "medium",
+      affectedFlightId: flightId,
+      impactPayload: impact,
+    });
+
+    await RecoveryActionRepository.createAction({
+      opsEventId: opsEvent.id,
+      actionType: action,
+      actor: "ops-user",
+      notes: impact.summary,
+      estimatedCost: impact.estimatedCostDelta,
+    });
+
+    gameEngine.onFlightStateChanged?.(
+      flightId,
+      action === "cancel" ? "cancelled" : "delayed",
+    );
+
+    res.json({ success: true, impact, eventId: opsEvent.id });
   } catch (err) {
     res.status(500).json({ error: "Recovery action failed" });
   }
@@ -304,6 +328,9 @@ type ScheduleDiffSummary = {
 type SchedulePublishResponse = {
   success: boolean;
   count?: number;
+  scheduleVersionId?: string;
+  versionNumber?: number;
+  status?: string;
   errors: ReturnType<typeof validateSchedule>["errors"];
   warnings: ReturnType<typeof validateSchedule>["warnings"];
   diffSummary: ScheduleDiffSummary;
@@ -339,23 +366,22 @@ async function buildScheduleDiffSummary(
   });
 
   const nextMonday = ScheduleRepository.getNextMonday();
-  const followingMonday = new Date(nextMonday);
-  followingMonday.setUTCDate(followingMonday.getUTCDate() + 7);
+  const publishedVersion =
+    await ScheduleRepository.getPublishedScheduleVersion(airlineId);
 
-  const existingFlights = await prisma.flightLeg.findMany({
-    where: {
-      scheduledDepartureUtc: {
-        gte: nextMonday,
-        lt: followingMonday,
-      },
-      OR: routes.length
-        ? routes.map((route) => ({
-            originAirportId: route.originAirportId,
-            destinationAirportId: route.destinationAirportId,
-          }))
-        : undefined,
-    },
-  });
+  const existingFlights = publishedVersion
+    ? await prisma.flightLeg.findMany({
+        where: {
+          scheduleVersionId: publishedVersion.id,
+          OR: routes.length
+            ? routes.map((route) => ({
+                originAirportId: route.originAirportId,
+                destinationAirportId: route.destinationAirportId,
+              }))
+            : undefined,
+        },
+      })
+    : [];
 
   const existingPlans = existingFlights
     .map((flight) => {
@@ -525,6 +551,9 @@ app.post("/api/schedule/publish", async (req, res) => {
     const payload: SchedulePublishResponse = {
       success: true,
       count: result.count,
+      scheduleVersionId: result.scheduleVersionId,
+      versionNumber: result.versionNumber,
+      status: result.status,
       errors: validationResult.errors,
       warnings: validationResult.warnings,
       diffSummary,
