@@ -1,0 +1,51 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Airline {
+  id    String @id @default(cuid())
+  name  String
+  cash  Float  @default(10000000)
+}
+
+model AircraftTail {
+  id                String @id @default(cuid())
+  airlineId         String
+  typeId            String
+  registration      String @unique
+  status            String @default("active") // active, maintenance, reserve, grounded
+  health            Float  @default(100.0)
+  utilizationTarget Float  @default(12.0)
+  maintenanceUntil  DateTime?
+}
+
+model Route {
+  id                   String @id @default(cuid())
+  airlineId            String
+  originAirportId      String
+  destinationAirportId String
+  weeklyDemand         Float
+  competitionScore     Float
+  strategicRole        String @default("trunk") // trunk, feeder, thin, longhaul
+}
+
+model FlightLeg {
+  id                    String @id @default(cuid())
+  flightNumber          String
+  tailId                String?
+  originAirportId       String
+  destinationAirportId  String
+  scheduledDepartureUtc DateTime
+  scheduledArrivalUtc   DateTime
+  estimatedDepartureUtc DateTime?
+  estimatedArrivalUtc   DateTime?
+  state                 String @default("scheduled") // scheduled, boarding, in_flight, arrived, delayed, diverted, cancelled
+  delayReason           String?
+  profit                Float?
+}

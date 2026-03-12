@@ -1,0 +1,26 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "outDir": "dist",
+        "lib": [
+            "es2022"
+        ]
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "references": [
+        {
+            "path": "../../packages/domain"
+        },
+        {
+            "path": "../../packages/sim-core"
+        },
+        {
+            "path": "../../packages/validation"
+        },
+        {
+            "path": "../../packages/api-contract"
+        }
+    ]
+}

@@ -1,0 +1,34 @@
+{
+  "name": "@airline-sim/sim-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@airline-sim/analytics": "workspace:*",
+    "@airline-sim/api-contract": "workspace:*",
+    "@airline-sim/domain": "workspace:*",
+    "@airline-sim/sim-core": "workspace:*",
+    "@airline-sim/validation": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ws": "^8.16.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@airline-sim/config-eslint": "workspace:*",
+    "@airline-sim/config-typescript": "workspace:*",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.11",
+    "@types/ws": "^8.5.10",
+    "prisma": "^5.22.0",
+    "tsx": "^4.9.3",
+    "typescript": "^5.4.5"
+  }
+}

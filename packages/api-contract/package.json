@@ -1,0 +1,20 @@
+{
+  "name": "@airline-sim/api-contract",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@airline-sim/domain": "workspace:*",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@airline-sim/config-typescript": "workspace:*",
+    "@airline-sim/config-eslint": "workspace:*",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

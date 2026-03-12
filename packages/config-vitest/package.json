@@ -1,0 +1,9 @@
+{
+  "name": "@airline-sim/config-vitest",
+  "version": "0.1.0",
+  "private": true,
+  "main": "vitest.config.ts",
+  "peerDependencies": {
+    "vitest": "^1.0.0 || ^2.0.0"
+  }
+}
