@@ -16,183 +16,231 @@ import { calculateOTP } from "@airline-sim/analytics";
 
 // Real Dashboard Overview API (T081)
 app.get("/api/dashboard", async (req, res) => {
-    try {
-        const airlineId = (req.query.airlineId as string) || "123";
-        const airline = await AirlineRepository.getBaseAirline(airlineId);
-        const flights = await FlightLegRepository.getActiveFlights();
+  try {
+    const airlineId = (req.query.airlineId as string) || "123";
+    const airline = await AirlineRepository.getBaseAirline(airlineId);
+    const flights = await FlightLegRepository.getActiveFlights();
 
-        // T086: Sum profits from flights arrived today/week
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+    // T086: Sum profits from flights arrived today/week
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-        const arrivedFlightsToday = await prisma.flightLeg.findMany({
-            where: { state: "arrived", scheduledArrivalUtc: { gte: today } }
-        });
+    const arrivedFlightsToday = await prisma.flightLeg.findMany({
+      where: { state: "arrived", scheduledArrivalUtc: { gte: today } },
+    });
 
-        const profitToday = arrivedFlightsToday.reduce((sum, f) => sum + (f.profit || 0), 0);
-        const networkOtp = calculateOTP(flights);
+    const profitToday = arrivedFlightsToday.reduce(
+      (sum, f) => sum + (f.profit || 0),
+      0,
+    );
+    const networkOtp = calculateOTP(flights);
 
-        res.json({
-            airline,
-            profitToday: Math.round(profitToday),
-            profitWeek: Math.round(profitToday * 0.9), // approximation for MVP
-            networkOtp: Math.round(networkOtp),
-            averageLoadFactor: 0.78,
-            activeAlerts: [],
-            criticalTails: []
-        });
-    } catch (err) {
-        console.error("Dashboard error:", err);
-        res.status(500).json({ error: "Failed to fetch dashboard overview" });
-    }
+    res.json({
+      airline,
+      profitToday: Math.round(profitToday),
+      profitWeek: Math.round(profitToday * 0.9), // approximation for MVP
+      networkOtp: Math.round(networkOtp),
+      averageLoadFactor: 0.78,
+      activeAlerts: [],
+      criticalTails: [],
+    });
+  } catch (err) {
+    console.error("Dashboard error:", err);
+    res.status(500).json({ error: "Failed to fetch dashboard overview" });
+  }
 });
 
 import { FlightLegRepository } from "./db/repositories/flightLeg.repository";
 
 app.get("/api/ops/flights", async (req, res) => {
-    try {
-        const flights = await FlightLegRepository.getActiveFlights();
-        res.json(flights);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch active flights" });
-    }
+  try {
+    const flights = await FlightLegRepository.getActiveFlights();
+    res.json(flights);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch active flights" });
+  }
 });
 
 app.post("/api/ops/recover", async (req, res) => {
-    try {
-        const { flightId, action } = req.body;
+  try {
+    const { flightId, action } = req.body;
 
-        if (action === "cancel") {
-            await FlightLegRepository.updateFlightState(flightId, "cancelled");
-        } else if (action === "delay") {
-            // For MVP, just move estimated arrival 1 hour
-            await FlightLegRepository.updateFlightState(flightId, "delayed");
-        }
-
-        // Broadcast the update immediately via WS (T066)
-        gameEngine.onFlightStateChanged?.(flightId, action === "cancel" ? "cancelled" : "delayed");
-
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Recovery action failed" });
+    if (action === "cancel") {
+      await FlightLegRepository.updateFlightState(flightId, "cancelled");
+    } else if (action === "delay") {
+      // For MVP, just move estimated arrival 1 hour
+      await FlightLegRepository.updateFlightState(flightId, "delayed");
     }
+
+    // Broadcast the update immediately via WS (T066)
+    gameEngine.onFlightStateChanged?.(
+      flightId,
+      action === "cancel" ? "cancelled" : "delayed",
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Recovery action failed" });
+  }
 });
 
 app.post("/api/ops/swap", async (req, res) => {
-    try {
-        const { flightId1, flightId2 } = req.body;
+  try {
+    const { flightId1, flightId2 } = req.body;
 
-        const f1 = await FlightLegRepository.getFlightById(flightId1);
-        const f2 = await FlightLegRepository.getFlightById(flightId2);
+    const f1 = await FlightLegRepository.getFlightById(flightId1);
+    const f2 = await FlightLegRepository.getFlightById(flightId2);
 
-        if (!f1 || !f2) return res.status(404).json({ error: "Flight not found" });
+    if (!f1 || !f2) return res.status(404).json({ error: "Flight not found" });
 
-        // Swap tails
-        await FlightLegRepository.updateFlightTail(flightId1, f2.tailId);
-        await FlightLegRepository.updateFlightTail(flightId2, f1.tailId);
+    // Swap tails
+    await FlightLegRepository.updateFlightTail(flightId1, f2.tailId);
+    await FlightLegRepository.updateFlightTail(flightId2, f1.tailId);
 
-        // Broadcast updates
-        gameEngine.onFlightStateChanged?.(flightId1, f1.state);
-        gameEngine.onFlightStateChanged?.(flightId2, f2.state);
+    // Broadcast updates
+    gameEngine.onFlightStateChanged?.(flightId1, f1.state);
+    gameEngine.onFlightStateChanged?.(flightId2, f2.state);
 
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: "Swap failed" });
-    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Swap failed" });
+  }
 });
 
 import { RouteRepository } from "./db/repositories/route.repository";
 
 // Route Management API (T069)
 app.get("/api/routes", async (req, res) => {
-    try {
-        const airlineId = (req.query.airlineId as string) || "123";
-        const routes = await RouteRepository.getAllRoutes(airlineId);
-        res.json(routes);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch routes" });
-    }
+  try {
+    const airlineId = (req.query.airlineId as string) || "123";
+    const routes = await RouteRepository.getAllRoutes(airlineId);
+    res.json(routes);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch routes" });
+  }
 });
 
 app.post("/api/routes", async (req, res) => {
-    try {
-        const route = await RouteRepository.createRoute(req.body);
-        res.status(201).json(route);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to create route" });
-    }
+  try {
+    const route = await RouteRepository.createRoute(req.body);
+    res.status(201).json(route);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to create route" });
+  }
 });
 
 import { ScheduleRepository } from "./db/repositories/schedule.repository";
 import { validateSchedule } from "@airline-sim/validation";
+import {
+  FlightLegPlanSchema,
+  AircraftType,
+  MaintenanceWindow,
+} from "@airline-sim/domain";
 
 // T071 & T072: Schedule Publishing & Validation
 app.post("/api/schedule/publish", async (req, res) => {
-    try {
-        const { airlineId, legs } = req.body;
+  try {
+    const { airlineId, legs } = req.body;
+    const effectiveAirlineId = airlineId || "123";
 
-        // Validation (T072)
-        const validationResult = validateSchedule(legs, {}, []);
-        if (!validationResult.isValid) {
-            return res.status(400).json({
-                error: "Validation failed",
-                details: validationResult.errors
-            });
-        }
-
-        const result = await ScheduleRepository.publishDraft(airlineId || "123", legs);
-        res.json({ success: true, count: result.count });
-    } catch (err) {
-        console.error("Publish error:", err);
-        res.status(500).json({ error: "Failed to publish schedule" });
+    const parseResult = FlightLegPlanSchema.array().safeParse(legs);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: "Invalid schedule payload",
+        details: parseResult.error.issues,
+      });
     }
+
+    const typedLegs = parseResult.data;
+
+    const fleet = await FleetRepository.getFleet(effectiveAirlineId);
+    const now = new Date();
+    const maintenanceWindows: MaintenanceWindow[] = fleet
+      .filter((tail) => tail.status === "maintenance" && tail.maintenanceUntil)
+      .map((tail) => ({
+        id: `mw-${tail.id}`,
+        tailId: tail.id,
+        startAt: now.toISOString(),
+        endAt: tail.maintenanceUntil!.toISOString(),
+        severity: "planned",
+      }));
+
+    const aircraftSpecs: Record<string, AircraftType> = {};
+
+    // Validation (T072)
+    const validationResult = validateSchedule(
+      typedLegs,
+      aircraftSpecs,
+      maintenanceWindows,
+    );
+    if (!validationResult.isValid) {
+      return res.status(400).json({
+        error: "Validation failed",
+        details: validationResult.errors,
+      });
+    }
+
+    const result = await ScheduleRepository.publishDraft(
+      effectiveAirlineId,
+      typedLegs,
+    );
+    res.json({ success: true, count: result.count });
+  } catch (err) {
+    console.error("Publish error:", err);
+    res.status(500).json({ error: "Failed to publish schedule" });
+  }
 });
 
 import { FleetRepository } from "./db/repositories/fleet.repository";
 
 // T083 Fleet API
 app.get("/api/fleet", async (req, res) => {
-    try {
-        const airlineId = (req.query.airlineId as string) || "123";
-        const fleet = await FleetRepository.getFleet(airlineId);
-        res.json(fleet);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch fleet" });
-    }
+  try {
+    const airlineId = (req.query.airlineId as string) || "123";
+    const fleet = await FleetRepository.getFleet(airlineId);
+    res.json(fleet);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch fleet" });
+  }
 });
 
 app.post("/api/fleet/maintenance", async (req, res) => {
-    try {
-        const { tailId } = req.body;
-        // Maintenance takes 4 hours for MVP
-        const until = new Date(Date.now() + 4 * 60 * 60 * 1000);
-        await FleetRepository.scheduleMaintenance(tailId, until);
-        res.json({ success: true, maintenanceUntil: until });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to schedule maintenance" });
-    }
+  try {
+    const { tailId } = req.body;
+    // Maintenance takes 4 hours for MVP
+    const until = new Date(Date.now() + 4 * 60 * 60 * 1000);
+    await FleetRepository.scheduleMaintenance(tailId, until);
+    res.json({ success: true, maintenanceUntil: until });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to schedule maintenance" });
+  }
 });
 
 // Websocket for live alerts (T054 & T066)
 wss.on("connection", (ws) => {
-    console.log("Client connected via WebSocket");
-    ws.send(JSON.stringify({ type: "WELCOME", payload: "Connected to Sim Service" }));
+  console.log("Client connected via WebSocket");
+  ws.send(
+    JSON.stringify({ type: "WELCOME", payload: "Connected to Sim Service" }),
+  );
 });
 
 import { gameEngine } from "./game-loop/engine";
 
 // Broadcast state changes from Game Engine
 gameEngine.onFlightStateChanged = (flightId, newState) => {
-    const message = JSON.stringify({ type: "FLIGHT_STATUS_UPDATE", payload: { flightId, newState } });
-    wss.clients.forEach(client => {
-        if (client.readyState === 1 /* ws.OPEN */) {
-            client.send(message);
-        }
-    });
+  const message = JSON.stringify({
+    type: "FLIGHT_STATUS_UPDATE",
+    payload: { flightId, newState },
+  });
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1 /* ws.OPEN */) {
+      client.send(message);
+    }
+  });
 };
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-    console.log(`🚀 Sim Service running on http://localhost:${PORT}`);
-    gameEngine.start();
+  console.log(`🚀 Sim Service running on http://localhost:${PORT}`);
+  gameEngine.start();
 });
