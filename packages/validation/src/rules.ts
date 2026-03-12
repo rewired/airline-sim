@@ -3,26 +3,23 @@ import {
   AircraftType,
   MaintenanceWindow,
 } from "@airline-sim/domain";
-import { ExplainableValidationResult } from "./types";
+import {
+  ExplainableValidationResult,
+  ExplainableValidationIssue,
+} from "./types";
 
 export function validateSchedule(
   legs: FlightLegPlan[],
   aircraftSpecs: Record<string, AircraftType>,
   maintenanceWindows: MaintenanceWindow[],
 ): ExplainableValidationResult {
-  const errors: ExplainableValidationResult["errors"] = [];
-  const warnings: ExplainableValidationResult["warnings"] = [];
+  const errors: ExplainableValidationIssue[] = [];
+  const warnings: ExplainableValidationIssue[] = [];
 
   // Mock implementation for vertical slice:
   // 1. T020 Overlap Validation
-  // Group by tail and check time overlap
-
   // 2. T021 Turnaround Minimum Validation
-  // Check if buffer between legs >= minTurnaroundMin
-
   // 3. T022 Range Validation
-  // Assuming we have origin/destination distance, if distance > aircraft.rangeKm -> error
-
   // 4. T023 Maintenance Collision Validation
   // Interpret the weekly leg plan as a reference week in UTC for coarse overlap checks.
   const referenceMondayUtc = new Date(Date.UTC(2025, 0, 6, 0, 0, 0, 0));
@@ -60,9 +57,20 @@ export function validateSchedule(
       );
       if (overlap > 0) {
         errors.push({
-          code: "maintenance_collision",
+          rule: "maintenance_collision",
+          severity: "error",
           message: `Leg ${leg.id} overlaps with scheduled maintenance.`,
           affectedLegIds: [leg.id],
+          cause: {
+            code: "TAIL_UNAVAILABLE_DURING_MAINTENANCE",
+            description:
+              "The assigned tail is blocked by a maintenance window at the planned departure/arrival time.",
+          },
+          recommendedAction: {
+            code: "REASSIGN_OR_RESCHEDULE_LEG",
+            action:
+              "Move the leg outside the maintenance window or assign a different available tail.",
+          },
         });
       }
     });
@@ -70,8 +78,20 @@ export function validateSchedule(
 
   if (legs.length === 0) {
     warnings.push({
-      code: "empty_schedule",
+      rule: "empty_schedule",
+      severity: "warning",
       message: "Schedule has no legs defined.",
+      affectedLegIds: [],
+      cause: {
+        code: "NO_FLIGHT_LEGS_PLANNED",
+        description:
+          "The submitted plan does not contain any legs, so there is nothing to publish.",
+      },
+      recommendedAction: {
+        code: "ADD_LEGS_BEFORE_PUBLISH",
+        action:
+          "Create at least one valid leg in the draft before publishing.",
+      },
     });
   }
 

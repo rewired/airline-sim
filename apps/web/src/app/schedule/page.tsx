@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FlightTimeline } from "@/features/schedule/components/FlightTimeline";
 import { ValidationPanel } from "@/features/schedule/components/ValidationPanel";
-import {
-  MOCK_TAILS,
-  MOCK_LEGS,
-  MOCK_ISSUES,
-} from "@/features/schedule/mockData";
+import { MOCK_TAILS, MOCK_LEGS, MOCK_ISSUES } from "@/features/schedule/mockData";
 import { usePublishSchedule } from "@/features/schedule/hooks/usePublishSchedule";
 import { useRoutes } from "@/features/network/hooks/useRoutes";
-import { ScheduleDraftLeg } from "@/features/schedule/types";
+import {
+  ScheduleDraftLeg,
+  DiffSummary,
+  ValidationIssue,
+} from "@/features/schedule/types";
 
 function formatHHmm(dateIso: string) {
   const d = new Date(dateIso);
@@ -23,8 +23,44 @@ function toIsoWeekDay(dateIso: string): 1 | 2 | 3 | 4 | 5 | 6 | 7 {
   return (day === 0 ? 7 : day) as 1 | 2 | 3 | 4 | 5 | 6 | 7;
 }
 
+function summarizeDraftDiff(
+  baselineLegs: ScheduleDraftLeg[],
+  draftLegs: ScheduleDraftLeg[],
+): DiffSummary {
+  const baselineById = new Map(baselineLegs.map((leg) => [leg.id, leg]));
+  const draftById = new Map(draftLegs.map((leg) => [leg.id, leg]));
+
+  const addedLegs = draftLegs.filter((leg) => !baselineById.has(leg.id)).length;
+  const removedLegs = baselineLegs.filter((leg) => !draftById.has(leg.id)).length;
+
+  const movedLegs = draftLegs.filter((leg) => {
+    const baseline = baselineById.get(leg.id);
+    if (!baseline) return false;
+    return (
+      baseline.departureTimeUtc !== leg.departureTimeUtc ||
+      baseline.arrivalTimeUtc !== leg.arrivalTimeUtc
+    );
+  }).length;
+
+  const tailChanges = draftLegs.filter((leg) => {
+    const baseline = baselineById.get(leg.id);
+    if (!baseline) return false;
+    return baseline.plannedTailId !== leg.plannedTailId;
+  }).length;
+
+  return { addedLegs, removedLegs, movedLegs, tailChanges };
+}
+
 export default function ScheduleBuilderPage() {
-  const [activeDate, setActiveDate] = useState("Today");
+  const [activeDate] = useState("Today");
+  const [diffReviewed, setDiffReviewed] = useState(false);
+  const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>(
+    MOCK_ISSUES,
+  );
+  const [serverDiffSummary, setServerDiffSummary] = useState<DiffSummary | null>(
+    null,
+  );
+
   const publishMutation = usePublishSchedule();
   const { data: routes = [] } = useRoutes("123");
 
@@ -42,7 +78,18 @@ export default function ScheduleBuilderPage() {
     })),
   );
 
+  const baselineLegs = useMemo(() => draftLegs, [draftLegs]);
+  const localDiffSummary = useMemo(
+    () => summarizeDraftDiff(baselineLegs, draftLegs),
+    [baselineLegs, draftLegs],
+  );
+
   const handlePublish = async () => {
+    if (!diffReviewed) {
+      alert("Please review and confirm the diff summary before publishing.");
+      return;
+    }
+
     try {
       const legs = draftLegs.map((draftLeg) => {
         const route = routes.find(
@@ -68,23 +115,29 @@ export default function ScheduleBuilderPage() {
         };
       });
 
-      await publishMutation.mutateAsync({
+      const response = await publishMutation.mutateAsync({
         airlineId: "123",
         legs,
       });
+      setValidationIssues([...response.errors, ...response.warnings]);
+      setServerDiffSummary(response.diffSummary);
       alert("Schedule published successfully!");
     } catch (err: any) {
-      alert("Error publishing schedule: " + err.message);
+      if (err?.errors || err?.warnings) {
+        setValidationIssues([...(err.errors || []), ...(err.warnings || [])]);
+        if (err.diffSummary) setServerDiffSummary(err.diffSummary);
+      }
+      alert("Error publishing schedule: " + (err?.message || "Validation failed"));
     }
   };
+
+  const effectiveDiff = serverDiffSummary || localDiffSummary;
 
   return (
     <main className="flex flex-col h-full bg-muted/20">
       <header className="bg-background border-b px-8 py-4 flex justify-between items-center shrink-0">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">
-            Schedule Builder
-          </h2>
+          <h2 className="text-3xl font-bold tracking-tight">Schedule Builder</h2>
           <p className="text-muted-foreground">
             Assign legs to tails and resolve operational constraints.
           </p>
@@ -93,7 +146,7 @@ export default function ScheduleBuilderPage() {
           <Button variant="outline">Import Draft</Button>
           <Button
             onClick={handlePublish}
-            disabled={publishMutation.isPending}
+            disabled={publishMutation.isPending || !diffReviewed}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {publishMutation.isPending ? "Publishing..." : "Publish to Ops"}
@@ -102,7 +155,27 @@ export default function ScheduleBuilderPage() {
       </header>
 
       <div className="flex-1 overflow-auto p-8 space-y-6 max-w-[1800px] w-full mx-auto">
-        <ValidationPanel issues={MOCK_ISSUES} />
+        <ValidationPanel issues={validationIssues} />
+
+        <div className="rounded-xl border bg-background p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Mandatory Diff Check before Publish</h3>
+            <Button variant="outline" size="sm" onClick={() => setDiffReviewed(true)}>
+              Mark Diff as Reviewed
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div className="border rounded-md p-3">New Legs: <span className="font-semibold">{effectiveDiff.addedLegs}</span></div>
+            <div className="border rounded-md p-3">Removed Legs: <span className="font-semibold">{effectiveDiff.removedLegs}</span></div>
+            <div className="border rounded-md p-3">Moved Legs: <span className="font-semibold">{effectiveDiff.movedLegs}</span></div>
+            <div className="border rounded-md p-3">Tail Changes: <span className="font-semibold">{effectiveDiff.tailChanges}</span></div>
+          </div>
+          {!diffReviewed && (
+            <p className="text-xs text-amber-600">
+              Publishing is locked until this diff step is explicitly reviewed.
+            </p>
+          )}
+        </div>
 
         <div className="space-y-4">
           <div className="flex justify-between items-end">

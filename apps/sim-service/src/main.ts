@@ -181,7 +181,20 @@ app.post("/api/ops/recover", async (req, res) => {
       action === "cancel" ? "cancelled" : "delayed",
     );
 
-    res.json({ success: true });
+    const impact =
+      action === "cancel"
+        ? {
+            otpDeltaPct: -4,
+            estimatedCostDelta: 6200,
+            summary: "Cancellation protects rotation integrity but hurts OTP and refund cost.",
+          }
+        : {
+            otpDeltaPct: -1,
+            estimatedCostDelta: 1400,
+            summary: "Delay preserves network continuity with moderate OTP and cost impact.",
+          };
+
+    res.json({ success: true, impact });
   } catch (err) {
     res.status(500).json({ error: "Recovery action failed" });
   }
@@ -204,7 +217,15 @@ app.post("/api/ops/swap", async (req, res) => {
     gameEngine.onFlightStateChanged?.(flightId1, f1.state);
     gameEngine.onFlightStateChanged?.(flightId2, f2.state);
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      impact: {
+        otpDeltaPct: 2,
+        estimatedCostDelta: 900,
+        summary:
+          "Tail swap stabilizes near-term OTP with minor repositioning/turnaround penalties.",
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: "Swap failed" });
   }
@@ -273,6 +294,179 @@ import {
   MaintenanceWindow,
 } from "@airline-sim/domain";
 
+type ScheduleDiffSummary = {
+  addedLegs: number;
+  removedLegs: number;
+  movedLegs: number;
+  tailChanges: number;
+};
+
+type SchedulePublishResponse = {
+  success: boolean;
+  count?: number;
+  errors: ReturnType<typeof validateSchedule>["errors"];
+  warnings: ReturnType<typeof validateSchedule>["warnings"];
+  diffSummary: ScheduleDiffSummary;
+};
+
+function buildPlanSignature(plan: {
+  routeId: string;
+  dayOfWeek: number;
+  departureTimeLocal: string;
+  arrivalTimeLocal: string;
+}) {
+  return [
+    plan.routeId,
+    plan.dayOfWeek,
+    plan.departureTimeLocal,
+    plan.arrivalTimeLocal,
+  ].join("|");
+}
+
+async function buildScheduleDiffSummary(
+  airlineId: string,
+  typedLegs: Array<{
+    routeId: string;
+    dayOfWeek: number;
+    departureTimeLocal: string;
+    arrivalTimeLocal: string;
+    plannedTailId: string | null;
+  }>,
+): Promise<ScheduleDiffSummary> {
+  const routeIds = [...new Set(typedLegs.map((leg) => leg.routeId))];
+  const routes = await prisma.route.findMany({
+    where: { airlineId, id: { in: routeIds } },
+  });
+
+  const nextMonday = ScheduleRepository.getNextMonday();
+  const followingMonday = new Date(nextMonday);
+  followingMonday.setUTCDate(followingMonday.getUTCDate() + 7);
+
+  const existingFlights = await prisma.flightLeg.findMany({
+    where: {
+      scheduledDepartureUtc: {
+        gte: nextMonday,
+        lt: followingMonday,
+      },
+      OR: routes.length
+        ? routes.map((route) => ({
+            originAirportId: route.originAirportId,
+            destinationAirportId: route.destinationAirportId,
+          }))
+        : undefined,
+    },
+  });
+
+  const existingPlans = existingFlights
+    .map((flight) => {
+      const route = routes.find(
+        (r) =>
+          r.originAirportId === flight.originAirportId &&
+          r.destinationAirportId === flight.destinationAirportId,
+      );
+      if (!route) return null;
+
+      const departure = new Date(flight.scheduledDepartureUtc);
+      const arrival = new Date(flight.scheduledArrivalUtc);
+      const day = departure.getUTCDay();
+      const dayOfWeek = day === 0 ? 7 : day;
+
+      return {
+        signature: buildPlanSignature({
+          routeId: route.id,
+          dayOfWeek,
+          departureTimeLocal: `${String(departure.getUTCHours()).padStart(2, "0")}:${String(departure.getUTCMinutes()).padStart(2, "0")}`,
+          arrivalTimeLocal: `${String(arrival.getUTCHours()).padStart(2, "0")}:${String(arrival.getUTCMinutes()).padStart(2, "0")}`,
+        }),
+        routeId: route.id,
+        dayOfWeek,
+        departureTimestamp: departure.getTime(),
+        tailId: flight.tailId,
+      };
+    })
+    .filter((plan): plan is NonNullable<typeof plan> => Boolean(plan));
+
+  const currentSignatures = new Set(
+    typedLegs.map((leg) =>
+      buildPlanSignature({
+        routeId: leg.routeId,
+        dayOfWeek: leg.dayOfWeek,
+        departureTimeLocal: leg.departureTimeLocal,
+        arrivalTimeLocal: leg.arrivalTimeLocal,
+      }),
+    ),
+  );
+
+  const existingSignatureMap = new Map(
+    existingPlans.map((plan) => [plan.signature, plan]),
+  );
+
+  const addedLegs = [...currentSignatures].filter(
+    (signature) => !existingSignatureMap.has(signature),
+  ).length;
+  const removedLegs = existingPlans.filter(
+    (plan) => !currentSignatures.has(plan.signature),
+  ).length;
+
+  const currentByRouteDay = new Map<string, typeof typedLegs>();
+  typedLegs.forEach((leg) => {
+    const key = `${leg.routeId}|${leg.dayOfWeek}`;
+    const bucket = currentByRouteDay.get(key) || [];
+    bucket.push(leg);
+    currentByRouteDay.set(key, bucket);
+  });
+
+  let movedLegs = 0;
+  existingPlans.forEach((plan) => {
+    const key = `${plan.routeId}|${plan.dayOfWeek}`;
+    const candidates = currentByRouteDay.get(key) || [];
+    const hasExact = candidates.some(
+      (candidate) =>
+        buildPlanSignature({
+          routeId: candidate.routeId,
+          dayOfWeek: candidate.dayOfWeek,
+          departureTimeLocal: candidate.departureTimeLocal,
+          arrivalTimeLocal: candidate.arrivalTimeLocal,
+        }) === plan.signature,
+    );
+    if (hasExact) return;
+
+    const hasNearCandidate = candidates.some((candidate) => {
+      const [hours, mins] = candidate.departureTimeLocal.split(":").map(Number);
+      const candidateDate = new Date(nextMonday);
+      candidateDate.setUTCDate(
+        candidateDate.getUTCDate() + (candidate.dayOfWeek - 1),
+      );
+      candidateDate.setUTCHours(hours, mins, 0, 0);
+      const deltaMin =
+        Math.abs(candidateDate.getTime() - plan.departureTimestamp) / 60000;
+      return deltaMin <= 180;
+    });
+
+    if (hasNearCandidate) {
+      movedLegs += 1;
+    }
+  });
+
+  const tailChanges = typedLegs.filter((leg) => {
+    const signature = buildPlanSignature({
+      routeId: leg.routeId,
+      dayOfWeek: leg.dayOfWeek,
+      departureTimeLocal: leg.departureTimeLocal,
+      arrivalTimeLocal: leg.arrivalTimeLocal,
+    });
+    const existingPlan = existingSignatureMap.get(signature);
+    return existingPlan && existingPlan.tailId !== leg.plannedTailId;
+  }).length;
+
+  return {
+    addedLegs,
+    removedLegs,
+    movedLegs,
+    tailChanges,
+  };
+}
+
 // T071 & T072: Schedule Publishing & Validation
 app.post("/api/schedule/publish", async (req, res) => {
   try {
@@ -303,6 +497,11 @@ app.post("/api/schedule/publish", async (req, res) => {
 
     const aircraftSpecs: Record<string, AircraftType> = {};
 
+    const diffSummary = await buildScheduleDiffSummary(
+      effectiveAirlineId,
+      typedLegs,
+    );
+
     // Validation (T072)
     const validationResult = validateSchedule(
       typedLegs,
@@ -310,17 +509,27 @@ app.post("/api/schedule/publish", async (req, res) => {
       maintenanceWindows,
     );
     if (!validationResult.isValid) {
-      return res.status(400).json({
-        error: "Validation failed",
-        details: validationResult.errors,
-      });
+      const payload: SchedulePublishResponse = {
+        success: false,
+        errors: validationResult.errors,
+        warnings: validationResult.warnings,
+        diffSummary,
+      };
+      return res.status(400).json(payload);
     }
 
     const result = await ScheduleRepository.publishDraft(
       effectiveAirlineId,
       typedLegs,
     );
-    res.json({ success: true, count: result.count });
+    const payload: SchedulePublishResponse = {
+      success: true,
+      count: result.count,
+      errors: validationResult.errors,
+      warnings: validationResult.warnings,
+      diffSummary,
+    };
+    res.json(payload);
   } catch (err) {
     console.error("Publish error:", err);
     res.status(500).json({ error: "Failed to publish schedule" });
