@@ -3,6 +3,7 @@ import cors from "cors";
 import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import { prisma } from "./db/prisma";
+import { z } from "zod";
 
 const app = express();
 app.use(cors());
@@ -47,6 +48,108 @@ app.get("/api/dashboard", async (req, res) => {
   } catch (err) {
     console.error("Dashboard error:", err);
     res.status(500).json({ error: "Failed to fetch dashboard overview" });
+  }
+});
+
+app.get("/api/dashboard/route-performance", async (req, res) => {
+  try {
+    const airlineId = (req.query.airlineId as string) || "123";
+    const routes = await RouteRepository.getAllRoutes(airlineId);
+    const routeMetrics = await Promise.all(
+      routes.map(async (route: any) => {
+        const legs = await prisma.flightLeg.findMany({
+          where: {
+            originAirportId: route.originAirportId,
+            destinationAirportId: route.destinationAirportId,
+          },
+        });
+
+        const totalProfit = legs.reduce(
+          (sum: number, leg: any) => sum + (leg.profit || 0),
+          0,
+        );
+        const revenueProxy = Math.max(route.weeklyDemand * 120, 1);
+        const marginPct = (totalProfit / revenueProxy) * 100;
+
+        return {
+          routeId: route.id,
+          pair: `${route.originAirportId}-${route.destinationAirportId}`,
+          profit: Math.round(totalProfit),
+          marginPct,
+        };
+      }),
+    );
+
+    const topRoutes = [...routeMetrics]
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, 5);
+    const bottomRoutes = [...routeMetrics]
+      .sort((a, b) => a.profit - b.profit)
+      .slice(0, 5);
+
+    res.json({ topRoutes, bottomRoutes });
+  } catch (err) {
+    console.error("Route performance error:", err);
+    res.status(500).json({ error: "Failed to fetch route performance" });
+  }
+});
+
+app.get("/api/dashboard/hub-health", async (req, res) => {
+  try {
+    const airlineId = (req.query.airlineId as string) || "123";
+    const routes = await RouteRepository.getAllRoutes(airlineId);
+    const airportIds = [
+      ...new Set(
+        routes.flatMap((r: any) => [r.originAirportId, r.destinationAirportId]),
+      ),
+    ];
+    const activeStates = [
+      "scheduled",
+      "boarding",
+      "in_flight",
+      "delayed",
+      "diverted",
+    ];
+    const delayedStates = ["delayed", "diverted"];
+
+    const healthRows = await Promise.all(
+      airportIds.map(async (airportId) => {
+        const [activeFlights, delayedFlights] = await Promise.all([
+          prisma.flightLeg.count({
+            where: {
+              state: { in: activeStates },
+              OR: [
+                { originAirportId: airportId },
+                { destinationAirportId: airportId },
+              ],
+            },
+          }),
+          prisma.flightLeg.count({
+            where: {
+              state: { in: delayedStates },
+              OR: [
+                { originAirportId: airportId },
+                { destinationAirportId: airportId },
+              ],
+            },
+          }),
+        ]);
+
+        return {
+          airportId,
+          name: airportId,
+          health: delayedFlights > 0 ? "Warning" : "Healthy",
+          activeFlights,
+          delayedFlights,
+          weather: delayedFlights > 0 ? "Disruption" : "Stable",
+        };
+      }),
+    );
+
+    res.json(healthRows);
+  } catch (err) {
+    console.error("Hub health error:", err);
+    res.status(500).json({ error: "Failed to fetch hub health" });
   }
 });
 
@@ -126,6 +229,39 @@ app.post("/api/routes", async (req, res) => {
     res.status(201).json(route);
   } catch (err) {
     res.status(500).json({ error: "Failed to create route" });
+  }
+});
+
+const OpenRouteCommandSchema = z.object({
+  commandId: z.string().min(1),
+  airlineId: z.string().min(1),
+  originAirportId: z.string().min(1),
+  destinationAirportId: z.string().min(1),
+  weeklyDemand: z.number().positive(),
+  competitionScore: z.number().min(0).max(1),
+  strategicRole: z.enum(["feeder", "trunk", "thin", "longhaul"]),
+  plannedAircraftTypeId: z.string().min(1),
+  weeklyFrequency: z.number().int().positive(),
+  expectedContribution: z.number(),
+});
+
+app.post("/api/routes/commands", async (req, res) => {
+  try {
+    const parseResult = OpenRouteCommandSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: "Invalid route command",
+        details: parseResult.error.issues,
+      });
+    }
+
+    const result = await RouteRepository.applyOpenRouteCommand(
+      parseResult.data,
+    );
+    res.status(201).json(result);
+  } catch (err) {
+    console.error("Route command error:", err);
+    res.status(500).json({ error: "Failed to apply route command" });
   }
 });
 
