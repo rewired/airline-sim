@@ -1,65 +1,65 @@
 # DD (Domain Design)
-> Vollständigkeitsregel: Alle Details aus `docs/IDEAS.md` bleiben verbindlich; dieses Dokument strukturiert die Inhalte ohne Erweiterung.
+> Completeness rule: All details from `docs/IDEAS.md` remain binding; this document structures the content without extension.
 
-## Kernsysteme
-### Airline-Struktur
+## Core Systems
+### Airline Structure
 - Airline
-- Markenprofil / Positionierung
-- Basisflughäfen
+- Brand profile / positioning
+- Base airports
 - Hubs
-- Flotte
-- Cash / Schulden / Leasing
+- Fleet
+- Cash / debt / leasing
 - Reputation
-- Betriebsstabilität
+- Operational stability
 
-### Flughäfen
-Pro Flughafen mindestens:
-- Größe / Nachfragegewicht
-- O&D-Nachfrageprofile
-- Slot-Druck
-- Gebührenniveau
-- Ground-Turn-Effizienz
-- Wetter-/Störungsneigung
-- Transferqualität
-- Curfew / Restriktionen light
+### Airports
+Per airport at minimum:
+- Size / demand weight
+- O&D demand profiles
+- Slot pressure
+- Fee level
+- Ground turn efficiency
+- Weather/disruption propensity
+- Transfer quality
+- Curfew / restrictions light
 
-### Flugzeuge
-Pro Muster / Tail:
-- Sitzkapazität
-- Reichweite
-- Turnaround-Minimum
-- Kostenprofil
-- Wartungszustand
-- Zuverlässigkeit
-- Eignung für Kurz-/Mittel-/Langstrecke
-- Tail-spezifische Historie
+### Aircraft
+Per type / tail:
+- Seating capacity
+- Range
+- Minimum turnaround
+- Cost profile
+- Maintenance condition
+- Reliability
+- Suitability for short-/medium-/long-haul
+- Tail-specific history
 
-Abstraktion für MVP:
-- Start mit vereinfachten Tail-individuellen Daten
-- später detailliertere Zuverlässigkeit, Alterung, Check-Intervalle
+Abstraction for MVP:
+- Start with simplified tail-individual data
+- later, more detailed reliability, aging, check intervals
 
-### Nachfrage und Wirtschaft
-Systeme:
-- O&D-Nachfrage
-- Transferverkehr über Hubs
-- Nachfrage-Saisonalität
-- Preiselastizität light
-- Service-/Markenbonus light
-- Konkurrenzdruck
+### Demand and Economics
+Systems:
+- O&D demand
+- Transfer traffic via hubs
+- Demand seasonality
+- Price elasticity light
+- Service/brand bonus light
+- Competitive pressure
 
-Kosten:
-- Fixkosten
-- Leasing / Finanzierung
-- Treibstoff abstrahiert
-- Flughafengebühren
-- Wartungskosten
-- Crewkosten auf Pool-Ebene
-- Verspätungs-/Stornokosten
+Costs:
+- Fixed costs
+- Leasing / financing
+- Fuel abstracted
+- Airport fees
+- Maintenance costs
+- Crew costs at pool level
+- Delay/cancellation costs
 
-Kennzahlen:
-- Profit pro Route
-- Profit pro Rotation
-- Auslastung
+Metrics:
+- Profit per route
+- Profit per rotation
+- Load factor
 - Yield
 - RASK / CASK light
 - OTP
@@ -67,75 +67,75 @@ Kennzahlen:
 - Hub Integrity
 
 ### Scheduling / Rotation
-Funktionen:
-- Flugplan auf Wochenbasis
-- Rotationsbau pro Tail
-- Vorlagen / Templates
-- Wiederkehrende Frequenzen
-- Wellen / Banks an Hubs
-- Mindestpuffer / Turnaround
-- Maintenance-Slots
-- Konfliktprüfung
+Functions:
+- Weekly flight schedule
+- Rotation building per tail
+- Templates
+- Recurring frequencies
+- Waves / banks at hubs
+- Minimum buffer / turnaround
+- Maintenance slots
+- Conflict checking
 
-Validierung:
-- Überschneidungen
-- unrealistische Bodenzeiten
-- Reichweitenverletzungen
-- Wartungskollisionen
-- Hub-Risiken
-- Übernutzung einzelner Tails
+Validation:
+- Overlaps
+- Unrealistic ground times
+- Range violations
+- Maintenance collisions
+- Hub risks
+- Overuse of individual tails
 
 ### Operations / IRROPS
-Eventtypen:
-- Wetter
+Event types:
+- Weather
 - Tail technical issue
-- verspätete Vorrotation
-- reduzierte Flughafen-Kapazität
+- Delayed inbound rotation
+- Reduced airport capacity
 - Maintenance overrun
-- Personalmangel als Pool-Event
+- Staff shortage as a pool event
 
-Spieleraktionen:
+Player actions:
 - Tail swap
-- Delay absorbieren
-- Flug streichen
-- Frequenz zusammenlegen
-- Ersatzgerät aktivieren
-- Maintenance verschieben mit Risiko
+- Absorb delay
+- Cancel flight
+- Merge frequency
+- Activate reserve aircraft
+- Defer maintenance with risk
 
-### Wartung
+### Maintenance
 MVP:
-- Health-Zustand je Tail
+- Health state per tail
 - planned maintenance windows
-- reliability penalty bei Vernachlässigung
-- höhere AOG-/Delay-Wahrscheinlichkeit
+- Reliability penalty when neglected
+- Higher AOG/delay probability
 
-Später:
-- A-check-artige Zyklen
-- Flottenalterung
-- Ersatzteil-/Kapazitätsdruck abstrahiert
+Later:
+- A-check-like cycles
+- Fleet aging
+- Spare-part/capacity pressure abstracted
 
 ### Crew
 MVP:
-- Crew-Pools je Basis / Flottengruppe
-- Kapazität und Verfügbarkeit
-- Engpass-Effekt auf Recovery und Planbarkeit
+- Crew pools per base / fleet group
+- Capacity and availability
+- Bottleneck effect on recovery and plannability
 
-Später optional:
+Later optional:
 - duty legality light
 - Repositioning
-- Reserve-Crew-Strategie
+- Reserve crew strategy
 
-### Wettbewerb
-MVP zunächst Solo-Welt oder isolierte Shards.
+### Competition
+MVP initially solo world or isolated shards.
 
-Später:
-- KI-Airlines oder Shared World
-- Konkurrenz auf Strecken
-- Yield-Druck
-- Hub-Kämpfe
-- Slot-Knappheit
+Later:
+- AI airlines or shared world
+- Competition on routes
+- Yield pressure
+- Hub battles
+- Slot scarcity
 
-## Datenmodell — grob
+## Data Model — High-Level
 ### Entities
 #### Airline
 - id
@@ -213,7 +213,7 @@ Später:
 - otp_delta
 - customer_impact_delta
 
-## TypeScript-Domänenmodell — erster Zuschnitt
+## TypeScript Domain Model — First Cut
 ```ts
 export type Id = string;
 export type ISODateTime = string;
