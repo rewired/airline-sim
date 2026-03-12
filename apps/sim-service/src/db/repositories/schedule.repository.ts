@@ -1,5 +1,7 @@
 import { prisma } from "../prisma";
 import { FlightLegPlan } from "@airline-sim/domain";
+import { ScheduleVersionRepository } from "./scheduleVersion.repository";
+import { RotationRepository } from "./rotation.repository";
 
 export const ScheduleRepository = {
   async publishDraft(airlineId: string, legs: FlightLegPlan[]) {
@@ -16,12 +18,30 @@ export const ScheduleRepository = {
       { originAirportId: string; destinationAirportId: string }
     >(routes.map((route: any) => [route.id, route]));
 
+    const draftVersion = await ScheduleVersionRepository.createDraftVersion(airlineId);
+
+    const rotationByTail = new Map<string, { id: string; sequenceIndex: number }>();
+
+    for (const leg of legs) {
+      if (!leg.plannedTailId) continue;
+      const current = rotationByTail.get(leg.plannedTailId);
+      if (!current) {
+        const rotation = await RotationRepository.createRotation(
+          draftVersion.id,
+          leg.plannedTailId,
+          1,
+        );
+        rotationByTail.set(leg.plannedTailId, {
+          id: rotation.id,
+          sequenceIndex: 2,
+        });
+      }
+    }
+
     const flightLegsData = legs.map((leg) => {
       const route = routeById.get(leg.routeId);
       if (!route) {
-        throw new Error(
-          `Route ${leg.routeId} not found for airline ${airlineId}`,
-        );
+        throw new Error(`Route ${leg.routeId} not found for airline ${airlineId}`);
       }
 
       const departure = this.combineDateAndTime(
@@ -35,7 +55,13 @@ export const ScheduleRepository = {
         leg.arrivalTimeLocal,
       );
 
+      const rotation = leg.plannedTailId
+        ? rotationByTail.get(leg.plannedTailId)
+        : undefined;
+
       return {
+        scheduleVersionId: draftVersion.id,
+        rotationId: rotation?.id,
         flightNumber: "AS" + Math.floor(100 + Math.random() * 900),
         tailId: leg.plannedTailId,
         originAirportId: route.originAirportId,
@@ -46,9 +72,23 @@ export const ScheduleRepository = {
       };
     });
 
-    return await prisma.flightLeg.createMany({
+    const createResult = await prisma.flightLeg.createMany({
       data: flightLegsData,
     });
+
+    await ScheduleVersionRepository.archivePublishedVersions(airlineId);
+    const publishedVersion = await ScheduleVersionRepository.publishVersion(draftVersion.id);
+
+    return {
+      count: createResult.count,
+      scheduleVersionId: publishedVersion.id,
+      versionNumber: publishedVersion.versionNumber,
+      status: publishedVersion.status,
+    };
+  },
+
+  async getPublishedScheduleVersion(airlineId: string) {
+    return ScheduleVersionRepository.getPublishedVersion(airlineId);
   },
 
   getNextMonday() {

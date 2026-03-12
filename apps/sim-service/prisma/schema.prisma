@@ -9,34 +9,87 @@ datasource db {
 }
 
 model Airline {
-  id    String @id @default(cuid())
-  name  String
-  cash  Float  @default(10000000)
+  id               String            @id @default(cuid())
+  name             String
+  cash             Float             @default(10000000)
+  scheduleVersions ScheduleVersion[]
+  aircraftTails    AircraftTail[]
+  routes           Route[]
+  kpiSnapshots     KpiSnapshot[]
 }
 
 model AircraftTail {
-  id                String @id @default(cuid())
+  id                String              @id @default(cuid())
   airlineId         String
   typeId            String
-  registration      String @unique
-  status            String @default("active") // active, maintenance, reserve, grounded
-  health            Float  @default(100.0)
-  utilizationTarget Float  @default(12.0)
+  registration      String              @unique
+  status            String              @default("active") // active, maintenance, reserve, grounded
+  health            Float               @default(100.0)
+  utilizationTarget Float               @default(12.0)
   maintenanceUntil  DateTime?
+  airline           Airline             @relation(fields: [airlineId], references: [id])
+  rotations         Rotation[]
+  maintenanceWindow MaintenanceWindow[]
+  opsEvents         OpsEvent[]          @relation("TailOpsEvents")
+  recoveryActions   RecoveryAction[]
 }
 
 model Route {
-  id                   String @id @default(cuid())
+  id                   String            @id @default(cuid())
   airlineId            String
   originAirportId      String
   destinationAirportId String
   weeklyDemand         Float
   competitionScore     Float
-  strategicRole        String @default("trunk") // trunk, feeder, thin, longhaul
+  strategicRole        String            @default("trunk") // trunk, feeder, thin, longhaul
+  airline              Airline           @relation(fields: [airlineId], references: [id])
+}
+
+model ScheduleVersion {
+  id            String         @id @default(cuid())
+  airlineId     String
+  versionNumber Int
+  status        String         @default("Draft") // Draft, Published, Archived
+  createdAt     DateTime       @default(now())
+  publishedAt   DateTime?
+  archivedAt    DateTime?
+  airline       Airline        @relation(fields: [airlineId], references: [id])
+  rotations     Rotation[]
+  flightLegs    FlightLeg[]
+  opsEvents     OpsEvent[]
+
+  @@unique([airlineId, versionNumber])
+}
+
+model Rotation {
+  id                String          @id @default(cuid())
+  scheduleVersionId String
+  tailId            String
+  sequenceIndex     Int
+  createdAt         DateTime        @default(now())
+  scheduleVersion   ScheduleVersion @relation(fields: [scheduleVersionId], references: [id])
+  tail              AircraftTail    @relation(fields: [tailId], references: [id])
+  flightLegs        FlightLeg[]
+
+  @@unique([scheduleVersionId, tailId, sequenceIndex])
+}
+
+model MaintenanceWindow {
+  id            String       @id @default(cuid())
+  tailId        String
+  startsAtUtc   DateTime
+  endsAtUtc     DateTime
+  reason        String
+  severity      String       @default("planned") // planned, required, critical
+  createdAt     DateTime     @default(now())
+  completedAt   DateTime?
+  tail          AircraftTail @relation(fields: [tailId], references: [id])
 }
 
 model FlightLeg {
-  id                    String @id @default(cuid())
+  id                    String           @id @default(cuid())
+  scheduleVersionId     String
+  rotationId            String?
   flightNumber          String
   tailId                String?
   originAirportId       String
@@ -45,7 +98,53 @@ model FlightLeg {
   scheduledArrivalUtc   DateTime
   estimatedDepartureUtc DateTime?
   estimatedArrivalUtc   DateTime?
-  state                 String @default("scheduled") // scheduled, boarding, in_flight, arrived, delayed, diverted, cancelled
+  state                 String           @default("scheduled") // scheduled, boarding, in_flight, arrived, delayed, diverted, cancelled
   delayReason           String?
   profit                Float?
+  scheduleVersion       ScheduleVersion  @relation(fields: [scheduleVersionId], references: [id])
+  rotation              Rotation?        @relation(fields: [rotationId], references: [id])
+}
+
+model OpsEvent {
+  id                String          @id @default(cuid())
+  scheduleVersionId String
+  type              String
+  severity          String
+  eventTimeUtc      DateTime        @default(now())
+  affectedFlightId  String?
+  affectedTailId    String?
+  affectedAirportId String?
+  impactPayload     String?
+  createdAt         DateTime        @default(now())
+  scheduleVersion   ScheduleVersion @relation(fields: [scheduleVersionId], references: [id])
+  affectedTail      AircraftTail?   @relation("TailOpsEvents", fields: [affectedTailId], references: [id])
+  recoveryActions   RecoveryAction[]
+}
+
+model RecoveryAction {
+  id            String       @id @default(cuid())
+  opsEventId    String
+  tailId        String?
+  actionType    String
+  actionTimeUtc DateTime     @default(now())
+  actor         String       @default("system")
+  notes         String?
+  estimatedCost Float?
+  opsEvent      OpsEvent     @relation(fields: [opsEventId], references: [id])
+  tail          AircraftTail? @relation(fields: [tailId], references: [id])
+}
+
+model KpiSnapshot {
+  id                String    @id @default(cuid())
+  airlineId         String
+  scheduleVersionId String?
+  capturedAtUtc     DateTime  @default(now())
+  profitToday       Float
+  networkOtp        Float
+  delayedFlights    Int
+  cancelledFlights  Int
+  activeFlights     Int
+  utilization       Float
+  notes             String?
+  airline           Airline   @relation(fields: [airlineId], references: [id])
 }
