@@ -27,16 +27,19 @@ export function ActiveFlightsTable({ flights }: ActiveFlightsTableProps) {
 
     const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    const handleManage = (flight: OpsFlightLeg) => {
+    const handleManage = async (flight: OpsFlightLeg) => {
         const choice = prompt("Manage Flight: [1] Cancel, [2] Delay, [3] Swap Aircraft");
         if (choice === "1") {
-            recovery.mutate({ flightId: flight.id, action: "cancel" });
+            const result = await recovery.mutateAsync({ flightId: flight.id, action: "cancel" });
+            alert(`Impact: OTP ${result.impact.otpDeltaPct}% | Cost Δ ${result.impact.estimatedCostDelta}. ${result.impact.summary}`);
         } else if (choice === "2") {
-            recovery.mutate({ flightId: flight.id, action: "delay" });
+            const result = await recovery.mutateAsync({ flightId: flight.id, action: "delay" });
+            alert(`Impact: OTP ${result.impact.otpDeltaPct}% | Cost Δ ${result.impact.estimatedCostDelta}. ${result.impact.summary}`);
         } else if (choice === "3") {
             const targetFlightId = prompt("Enter Flight ID/Number to swap with (MVP: enter another active Flight ID):");
             if (targetFlightId) {
-                swap.mutate({ flightId1: flight.id, flightId2: targetFlightId });
+                const result = await swap.mutateAsync({ flightId1: flight.id, flightId2: targetFlightId });
+                alert(`Impact: OTP ${result.impact.otpDeltaPct}% | Cost Δ ${result.impact.estimatedCostDelta}. ${result.impact.summary}`);
             }
         }
     };

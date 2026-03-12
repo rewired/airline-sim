@@ -1,4 +1,4 @@
-import { Airport, AircraftTail } from "@airline-sim/domain";
+import { Airport } from "@airline-sim/domain";
 
 export interface FlightLegDraft {
   id: string;
@@ -25,8 +25,31 @@ export interface ScheduleDraftLeg {
 
 export interface ValidationIssue {
   id: string;
-  type: "overlap" | "turnaround" | "maintenance" | "range" | "curfew";
+  rule: string;
   severity: "error" | "warning";
   message: string;
   affectedLegIds: string[];
+  cause: {
+    code: string;
+    description: string;
+  };
+  recommendedAction: {
+    code: string;
+    action: string;
+  };
+}
+
+export interface DiffSummary {
+  addedLegs: number;
+  removedLegs: number;
+  movedLegs: number;
+  tailChanges: number;
+}
+
+export interface SchedulePublishResponse {
+  success: boolean;
+  count?: number;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+  diffSummary: DiffSummary;
 }
