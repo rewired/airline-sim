@@ -344,3 +344,23 @@ Groups/tickets T001–T060 as described in IDEAS:
 - Ops Cockpit Slice (T046–T050)
 - Backend / Sim Service (T051–T055)
 - Tests (T056–T060)
+
+## Ticket Progress Matrix (visible tracking)
+Status legend: `TODO` = not started, `IN PROGRESS` = active implementation, `DONE` = merged, `BLOCKED` = waiting dependency/decision.
+
+| Block | Ticket Range | Scope | Status | Notes |
+| --- | --- | --- | --- | --- |
+| A | T001–T006 | Foundations | TODO | Initial setup and shell baselines |
+| B | T007–T012 | Domain & Contracts | TODO | Canonical domain contracts |
+| C | T013–T018 | Sim Core | TODO | Authoritative simulation primitives |
+| D | T019–T024 | Validation | TODO | Explainable validation engine |
+| E | T025–T030 | Web App Shell | TODO | Navigation/layout/app shell |
+| F | T031–T035 | Dashboard Slice | TODO | KPI and operational overview |
+| G | T036–T039 | Network Planner Slice | TODO | Route planning + economics |
+| H | T040–T045 | Schedule Builder Slice | TODO | Rotations, conflicts, publish |
+| I | T046–T050 | Ops Cockpit Slice | TODO | Incident handling + recovery |
+| J | T051–T055 | Backend / Sim Service | TODO | API + command execution layer |
+| K | T056–T060 | Tests | TODO | Unit/integration/E2E baseline |
+| L | T080–T089 | Reserved future expansion | TODO | Fill once T08x tickets are defined |
+
+Governance rule: this matrix must be updated in every PR that changes ticket status or introduces new ticket ranges.

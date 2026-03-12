@@ -81,3 +81,10 @@ Not included in MVP 0.1:
 ## Documentation Requirement
 - For every substantive change: update CHANGELOG.
 - For every architecture or guiding decision change: create/continue an ADR.
+- Every major feature PR must contain a mandatory `Docs Impact` section with explicit decisions:
+  - `CHANGELOG`: yes/no + brief rationale.
+  - `ADR`: yes/no + brief rationale.
+- Follow-up ADRs are mandatory when changes alter one of the following:
+  - server-authoritative trust boundaries,
+  - core data model entities/relations,
+  - event architecture (event types, lifecycles, or propagation semantics).
